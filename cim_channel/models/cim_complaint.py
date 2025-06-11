@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2024 Moval Agroingeniería
+# Copyright 2025 Moval Agroingeniería
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
 import base64
@@ -34,7 +34,8 @@ class CimComplaint(models.Model):
         characters = string.ascii_uppercase + string.digits
         # String to cipher
         tracking_code_ok = False
-        while (not tracking_code_ok):
+        tracking_code = ''
+        while not tracking_code_ok:
             tracking_code = ''.join(random.choice(characters)
                                     for _ in range(self._size_tracking_code))
             repeated_complaints = self.search(
@@ -47,8 +48,9 @@ class CimComplaint(models.Model):
 
     def _default_setted_sequence(self):
         resp = False
-        sequence_complaint_code_id = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'sequence_complaint_code_id')
+        config = self.env['ir.config_parameter'].sudo()
+        sequence_complaint_code_id = config.get_param(
+            'cim_complaints_channel.sequence_complaint_code_id', False)
         if sequence_complaint_code_id:
             resp = True
         return resp
@@ -183,12 +185,12 @@ class CimComplaint(models.Model):
         default='01_received',
         required=True,
         index=True,
-        track_visibility='onchange',)
+        tracking=True,)
 
     investigating_user_id = fields.Many2one(
         string='Instructor',
         comodel_name='res.users',
-        track_visibility='onchange',)
+        tracking=True,)
 
     communication_ids = fields.One2many(
         string='Communications',
@@ -203,7 +205,7 @@ class CimComplaint(models.Model):
         string='Rejected complaint',
         default=False,
         readonly=True,
-        track_visibility='onchange',)
+        tracking=True,)
 
     rejection_cause = fields.Text(
         string='Cause of the rejection',)
@@ -212,7 +214,7 @@ class CimComplaint(models.Model):
         string='Extended process',
         default=False,
         readonly=True,
-        track_visibility='onchange',)
+        tracking=True,)
 
     param_acknowledgement_period = fields.Integer(
         string='Acknowledgement period (number of days)',
@@ -407,7 +409,6 @@ class CimComplaint(models.Model):
                 is_anonymous = False
             record.is_anonymous = is_anonymous
 
-    @api.multi
     def _compute_user_in_group_cim_settings(self):
         user_in_group_cim_settings = \
             self.env.user.has_group(
@@ -415,7 +416,6 @@ class CimComplaint(models.Model):
         for record in self:
             record.user_in_group_cim_settings = user_in_group_cim_settings
 
-    @api.multi
     def _compute_number_of_communications(self):
         for record in self:
             number_of_communications = 0
@@ -423,65 +423,61 @@ class CimComplaint(models.Model):
                 number_of_communications = len(record.communication_ids)
             record.number_of_communications = number_of_communications
 
-    @api.multi
     def _compute_param_acknowledgement_period(self):
-        param_acknowledgement_period = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'acknowledgement_period')
+        config = self.env['ir.config_parameter'].sudo()
+        param_acknowledgement_period = config.get_param(
+            'cim_complaints_channel.acknowledgement_period', False)
         if not param_acknowledgement_period:
             param_acknowledgement_period = 0
         for record in self:
             record.param_acknowledgement_period = param_acknowledgement_period
 
-    @api.multi
     def _compute_param_notice_period(self):
-        param_notice_period = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'notice_period')
+        config = self.env['ir.config_parameter'].sudo()
+        param_notice_period = config.get_param(
+            'cim_complaints_channel.notice_period', False)
         if not param_notice_period:
             param_notice_period = 10
         for record in self:
             record.param_notice_period = param_notice_period
 
-    @api.multi
     def _compute_param_deadline(self):
-        param_deadline = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'deadline')
+        config = self.env['ir.config_parameter'].sudo()
+        param_deadline = config.get_param(
+            'cim_complaints_channel.deadline', False)
         if not param_deadline:
             param_deadline = 1
         for record in self:
             record.param_deadline = param_deadline
 
-    @api.multi
     def _compute_param_deadline_extended(self):
-        param_deadline_extended = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'deadline_extended')
+        config = self.env['ir.config_parameter'].sudo()
+        param_deadline_extended = config.get_param(
+            'cim_complaints_channel.deadline_extended', False)
         if not param_deadline_extended:
             param_deadline_extended = 1
         for record in self:
             record.param_deadline_extended = param_deadline_extended
 
-    @api.multi
     def _compute_param_email_for_notice(self):
-        param_email_for_notice = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'email_for_notice')
+        config = self.env['ir.config_parameter'].sudo()
+        param_email_for_notice = config.get_param(
+            'cim_complaints_channel.email_for_notice', False)
         if not param_email_for_notice:
             param_email_for_notice = ''
         param_email_for_notice = param_email_for_notice.strip()
         for record in self:
             record.param_email_for_notice = param_email_for_notice
 
-    @api.multi
     def _compute_deadline_date(self):
         for record in self:
             instruction_months = record.param_deadline
             if record.is_extended:
                 instruction_months = record.param_deadline_extended
-            deadline_date = (datetime.strptime(
-                record.creation_date, '%Y-%m-%d') +
-                             relativedelta(months=instruction_months) +
-                             relativedelta(days=-1)).strftime('%Y-%m-%d')
+            deadline_date = (record.creation_date +
+                             relativedelta(months=instruction_months, days=-1)).strftime('%Y-%m-%d')
             record.deadline_date = deadline_date
 
-    @api.multi
     def _compute_deadline_state(self):
         for record in self:
             deadline_state = '07_finished'
@@ -489,19 +485,11 @@ class CimComplaint(models.Model):
                 deadline_state = '99_rejected'
             elif record.state != '05_resolved':
                 current_date = datetime.today().strftime('%Y-%m-%d')
-                # Provisional (test: add days to current_date)
-                # current_date = (datetime.strptime(
-                #     current_date, '%Y-%m-%d') + relativedelta(
-                #     days=90)).strftime('%Y-%m-%d')
-                # print(current_date)
-                # Provisional (end of test)
                 months_deadline = record.param_deadline
                 if record.is_extended:
                     months_deadline = record.param_deadline_extended
-                deadline_date = \
-                    ((datetime.strptime(record.creation_date, '%Y-%m-%d') +
-                      relativedelta(months=months_deadline) +
-                      relativedelta(days=-1)).strftime('%Y-%m-%d'))
+                deadline_date = (record.creation_date + relativedelta(
+                    months=months_deadline, days=-1)).strftime('%Y-%m-%d')
                 if current_date <= deadline_date:
                     deadline_state = '01_on_time'
                     if record.is_extended:
@@ -520,33 +508,30 @@ class CimComplaint(models.Model):
                         deadline_state = '06_extended_expirated'
             record.deadline_state = deadline_state
 
-    @api.multi
     def _compute_is_acknowledgement_expired(self):
         for record in self:
             is_acknowledgement_expired = False
             if not record.is_rejected and record.state == '01_received':
-                deadline_acknowledgement = \
-                    ((datetime.strptime(
-                        record.creation_date, '%Y-%m-%d') +
-                        relativedelta(
-                            days=record.param_acknowledgement_period - 1)).
-                        strftime('%Y-%m-%d'))
+                deadline_acknowledgement = (record.creation_date + relativedelta(
+                    days=record.param_acknowledgement_period - 1)).strftime('%Y-%m-%d')
                 current_date = datetime.today().strftime('%Y-%m-%d')
                 if current_date > deadline_acknowledgement:
                     is_acknowledgement_expired = True
             record.is_acknowledgement_expired = is_acknowledgement_expired
 
-    @api.model
     def _search_is_acknowledgement_expired(self, operator, value):
         complaint_ids = []
         operator_of_filter = 'in'
-        if operator == '!=':
+        is_acknowledgement_expired = ((operator == '=' and value) or
+                                      (operator == '!=' and not value))
+        if not is_acknowledgement_expired:
             operator_of_filter = 'not in'
         acknowledgement_period = 0
-        param_acknowledgement_period = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'acknowledgement_period')
+        config = self.env['ir.config_parameter'].sudo()
+        param_acknowledgement_period = config.get_param(
+            'cim_complaints_channel.acknowledgement_period', False)
         if param_acknowledgement_period:
-            acknowledgement_period = param_acknowledgement_period
+            acknowledgement_period = int(param_acknowledgement_period)
         where_clause = 'is_rejected = false and state = \'01_received\''
         if acknowledgement_period >= 0:
             where_clause = where_clause + ' and current_date - ' + \
@@ -568,17 +553,16 @@ class CimComplaint(models.Model):
                 expected_resolution_date = record.resolution_date
             record.expected_resolution_date = expected_resolution_date
 
-    @api.multi
     def _compute_setted_sequence(self):
-        sequence_complaint_code_id = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'sequence_complaint_code_id')
+        config = self.env['ir.config_parameter'].sudo()
+        sequence_complaint_code_id = config.get_param(
+            'cim_complaints_channel.sequence_complaint_code_id', False)
         for record in self:
             setted_sequence = False
             if sequence_complaint_code_id:
                 setted_sequence = True
             record.setted_sequence = setted_sequence
 
-    @api.multi
     def _compute_summary_info(self):
         for record in self:
             preffix_info = record.name + '. ' + record.complaint_type_id.name
@@ -611,7 +595,6 @@ class CimComplaint(models.Model):
             _('Issue:') + ' ' + issue
         return resp
 
-    @api.multi
     def _compute_number_of_attachments(self):
         for record in self:
             number_of_attachments = self.MAX_DOCUMENTS
@@ -631,7 +614,6 @@ class CimComplaint(models.Model):
                                             number_of_attachments - 1
             record.number_of_attachments = number_of_attachments
 
-    @api.multi
     def _compute_icon_warning(self):
         image_path_is_acknowledgement_expired_no = \
             modules.module.get_resource_path('cim_complaints_channel',
@@ -658,7 +640,6 @@ class CimComplaint(models.Model):
                 icon_warning = base64.b64encode(image_file.read())
             record.icon_warning = icon_warning
 
-    @api.multi
     def _compute_decrypted_tracking_code(self):
         for record in self:
             decrypted_tracking_code = ''
@@ -667,7 +648,6 @@ class CimComplaint(models.Model):
                     record.tracking_code, self._cipher_key)
             record.decrypted_tracking_code = decrypted_tracking_code
 
-    @api.multi
     def _compute_decrypted_complainant_name(self):
         for record in self:
             decrypted_complainant_name = ''
@@ -676,7 +656,6 @@ class CimComplaint(models.Model):
                     record.complainant_name, self._cipher_key)
             record.decrypted_complainant_name = decrypted_complainant_name
 
-    @api.multi
     def _compute_decrypted_complainant_email(self):
         for record in self:
             decrypted_complainant_email = ''
@@ -685,7 +664,6 @@ class CimComplaint(models.Model):
                     record.complainant_email, self._cipher_key)
             record.decrypted_complainant_email = decrypted_complainant_email
 
-    @api.multi
     def _compute_decrypted_complainant_vat(self):
         for record in self:
             decrypted_complainant_vat = ''
@@ -694,7 +672,6 @@ class CimComplaint(models.Model):
                     record.complainant_vat, self._cipher_key)
             record.decrypted_complainant_vat = decrypted_complainant_vat
 
-    @api.multi
     def _compute_decrypted_complainant_phone(self):
         for record in self:
             decrypted_complainant_phone = ''
@@ -703,7 +680,6 @@ class CimComplaint(models.Model):
                     record.complainant_phone, self._cipher_key)
             record.decrypted_complainant_phone = decrypted_complainant_phone
 
-    @api.multi
     def _compute_decrypted_witness_name(self):
         for record in self:
             decrypted_witness_name = ''
@@ -712,7 +688,6 @@ class CimComplaint(models.Model):
                     record.witness_name, self._cipher_key)
             record.decrypted_witness_name = decrypted_witness_name
 
-    @api.multi
     def _compute_decrypted_complainant_data(self):
         for record in self:
             decrypted_complainant_data = ''
@@ -736,8 +711,9 @@ class CimComplaint(models.Model):
             record.decrypted_complainant_data = decrypted_complainant_data
 
     def _compute_automatic_email_state(self):
-        automatic_email_state = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'automatic_email_state')
+        config = self.env['ir.config_parameter'].sudo()
+        automatic_email_state = config.get_param(
+            'cim_complaints_channel.automatic_email_state', False)
         for record in self:
             record.automatic_email_state = automatic_email_state
 
@@ -753,7 +729,7 @@ class CimComplaint(models.Model):
     def _check_investigating_user_id(self):
         for record in self:
             if ((not record.investigating_user_id) and
-               (record.state == '04_ready' or record.state == '05_resolved')):
+               (record.state in ('04_ready', '05_resolved'))):
                 raise exceptions.ValidationError(
                     _('If the complaint is ready or resolved, then it is '
                       'mandatory to enter the instructor.'))
@@ -761,8 +737,9 @@ class CimComplaint(models.Model):
     @api.constrains('measures_taken', 'state')
     def _check_measures_taken(self):
         for record in self:
-            if ((record.state == '04_ready' or record.state == '05_resolved') and
-               ((not record.measures_taken) or record.measures_taken == '')):
+            if ((record.state in ('04_ready', '05_resolved'))
+                    and ((not record.measures_taken) or
+                         record.measures_taken == '')):
                 raise exceptions.ValidationError(
                     _('If the complaint is ready or resolved, then it is '
                       'mandatory to enter the measures taken.'))
@@ -775,7 +752,6 @@ class CimComplaint(models.Model):
                     _('If the complaint is resolved, then it is mandatory '
                       'to enter the resolution text.'))
 
-    @api.multi
     def name_get(self):
         result = []
         for record in self:
@@ -784,48 +760,50 @@ class CimComplaint(models.Model):
             result.append((record.id, display_name))
         return result
 
-    @api.model
-    def create(self, vals):
-        sequence_complaint_code_id = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'sequence_complaint_code_id')
-        if sequence_complaint_code_id:
-            model_ir_sequence = self.env['ir.sequence'].sudo()
-            sequence_complaint_code = \
-                model_ir_sequence.browse(sequence_complaint_code_id)
-            if sequence_complaint_code:
-                new_code = model_ir_sequence.next_by_code(
-                    sequence_complaint_code.code)
-                vals['name'] = new_code
-        else:
-            if 'name' in vals and vals['name']:
-                vals['name'] = vals['name'].strip()
-        if ('name' not in vals) or (not vals['name']):
-            raise exceptions.ValidationError(_('It is mandatory to enter a '
-                                               'code for the new complaint.'))
-        vals = self._process_vals(vals, is_create=True)
-        new_complaint = super(CimComplaint, self).create(vals)
-        if 'complainant_email' in vals and vals['complainant_email']:
-            mail_template_tracking_code = None
-            try:
-                mail_template_tracking_code = self.env.ref(
-                    'cim_complaints_channel.'
-                    'mail_template_tracking_code').sudo()
-            except Exception:
+    @api.model_create_multi
+    def create(self, vals_list):
+        config = self.env['ir.config_parameter'].sudo()
+        sequence_complaint_code_id = config.get_param(
+            'cim_complaints_channel.sequence_complaint_code_id', False)
+        for vals in vals_list:
+            if sequence_complaint_code_id:
+                model_ir_sequence = self.env['ir.sequence'].sudo()
+                sequence_complaint_code = \
+                    model_ir_sequence.browse(int(sequence_complaint_code_id))
+                if sequence_complaint_code:
+                    new_code = model_ir_sequence.next_by_code(
+                        sequence_complaint_code.code)
+                    vals['name'] = new_code
+            else:
+                if 'name' in vals and vals['name']:
+                    vals['name'] = vals['name'].strip()
+            if ('name' not in vals) or (not vals['name']):
+                raise exceptions.ValidationError(_('It is mandatory to enter a '
+                                                   'code for the new complaint.'))
+            vals = self._process_vals(vals, is_create=True)
+        new_complaints = super(CimComplaint, self).create(vals_list)
+        for new_complaint in new_complaints:
+            if new_complaint.complainant_email:
                 mail_template_tracking_code = None
-            if mail_template_tracking_code:
-                user_lang = 'en_US'
-                if new_complaint.complaint_lang:
-                    user_lang = new_complaint.complaint_lang
-                mail_template_tracking_code.with_context(
-                    lang=user_lang).send_mail(
-                        new_complaint.id, force_send=True)
-        new_complaint.create_initial_communication()
-        return new_complaint
+                try:
+                    mail_template_tracking_code = self.env.ref(
+                        'cim_complaints_channel.'
+                        'mail_template_tracking_code').sudo()
+                except Exception:
+                    mail_template_tracking_code = None
+                if mail_template_tracking_code:
+                    user_lang = 'en_US'
+                    if new_complaint.complaint_lang:
+                        user_lang = new_complaint.complaint_lang
+                    mail_template_tracking_code.with_context(
+                        lang=user_lang).send_mail(
+                            new_complaint.id, force_send=True)
+            new_complaint.create_initial_communication()
+        return new_complaints
 
-    @api.multi
     def write(self, vals):
         vals = self._process_vals(vals)
-        super(CimComplaint, self).write(vals)
+        super().write(vals)
         return True
 
     @api.model
@@ -1018,35 +996,30 @@ class CimComplaint(models.Model):
         return vals
 
     @api.model
-    def fields_view_get(self, view_id=None, view_type='form', toolbar=False,
-                        submenu=False):
-        res = super(CimComplaint, self).fields_view_get(
-            view_id=view_id, view_type=view_type,
-            toolbar=toolbar, submenu=submenu)
-        if (not self.env.user.has_group(
-                'cim_complaints_channel.group_cim_settings')):
-            if view_type == 'tree':
-                doc = etree.XML(res['arch'])
-                nodes = doc.xpath('//tree')
-                for node in nodes:
-                    node.set('create', '0')
-                res['arch'] = etree.tostring(doc)
-            if view_type == 'form':
-                doc = etree.XML(res['arch'])
-                nodes = doc.xpath('//form')
-                for node in nodes:
-                    node.set('create', '0')
-                res['arch'] = etree.tostring(doc)
-        return res
+    def _get_view(self, view_id=None, view_type='form', **options):
+        self.env['ir.ui.view'].clear_caches()
+        arch, view = super()._get_view(view_id, view_type, **options)
+        if view_type in ['form', 'tree']:
+            if (not self.env.user.has_group(
+               'cim_complaints_channel.group_cim_settings')):
+                if view_type == 'tree':
+                    nodes = arch.xpath('//tree')
+                    for node in nodes:
+                        node.set('create', '0')
+                else:
+                    nodes = arch.xpath('//form')
+                    for node in nodes:
+                        node.set('create', '0')
+        return arch, view
 
     @api.model
-    def fields_get(self, fields=None):
+    def fields_get(self, *args, **kwargs):
         fields_to_hide = ['complainant_name', 'link_type_id',
                           'complainant_email', 'complainant_phone',
                           'complainant_vat', 'witness_name', 'tracking_code',
                           'document_01', 'document_02', 'document_03',
                           'document_04', 'document_05', 'document_06', ]
-        res = super(CimComplaint, self).fields_get(fields)
+        res = super().fields_get(*args, **kwargs)
         for field_to_hide in fields_to_hide:
             if field_to_hide in res:
                 data_of_field = res[field_to_hide]
@@ -1064,9 +1037,8 @@ class CimComplaint(models.Model):
             if not record.user_in_group_cim_settings:
                 raise exceptions.UserError(_(
                     'You do not have permission to execute this action.'))
-        return super(CimComplaint, self).unlink()
+        return super().unlink()
 
-    @api.multi
     def action_get_communications(self):
         self.ensure_one()
         current_complaint = self
@@ -1094,14 +1066,12 @@ class CimComplaint(models.Model):
             }
         return act_window
 
-    @api.multi
     def action_go_to_state_02_admitted(self):
         self.ensure_one()
         if self.state == '01_received' and not self.is_rejected:
             self.state = '02_admitted'
             self._create_communication()
 
-    @api.multi
     def action_reject(self):
         self.ensure_one()
         if self.state == '01_received':
@@ -1115,34 +1085,24 @@ class CimComplaint(models.Model):
             }
             return act_window
 
-    @api.multi
     def action_readmit(self):
         self.ensure_one()
         if self.is_rejected:
             self.is_rejected = False
 
-    @api.model
-    def action_reject_multiple(self, complaints_to_reject_ids):
-        user_is_manager = self.env.user.has_group(
-            'cim_complaints_channel.group_cim_manager')
-        if not user_is_manager:
-            raise exceptions.UserError(_(
-                'You do not have permission to execute this action.'))
-        if complaints_to_reject_ids:
-            complaints_to_reject = self.browse(complaints_to_reject_ids)
-            for complaint in (complaints_to_reject or []):
-                if not complaint.is_rejected:
-                    if complaint.state != '01_received':
-                        raise exceptions.UserError(_(
-                            'It is only possible to reject complaints '
-                            'in the \'RECEIVED\' state.'))
-                    complaint.write({
-                        'is_rejected': True,
-                        'rejection_cause': _('Incomplete information.'),
-                        })
-                    complaint._create_communication()
+    def reject_multiple(self):
+        for complaint in self:
+            if not complaint.is_rejected:
+                if complaint.state != '01_received':
+                    raise exceptions.UserError(_(
+                        'It is only possible to reject complaints '
+                        'in the \'RECEIVED\' state.'))
+                complaint.write({
+                    'is_rejected': True,
+                    'rejection_cause': _('Incomplete information.'),
+                    })
+                complaint._create_communication()
 
-    @api.multi
     def action_go_to_state_03_in_progress(self):
         self.ensure_one()
         if self.state == '02_admitted' and not self.is_rejected:
@@ -1153,13 +1113,11 @@ class CimComplaint(models.Model):
             if self.automatic_email_state:
                 self._create_communication()
 
-    @api.multi
     def action_go_to_state_04_ready(self):
         self.ensure_one()
         if self.state == '03_in_progress' and not self.is_rejected:
             self.state = '04_ready'
 
-    @api.multi
     def action_go_to_state_05_resolved(self):
         self.ensure_one()
         if self.state == '04_ready' and not self.is_rejected:
@@ -1173,7 +1131,6 @@ class CimComplaint(models.Model):
             }
             return act_window
 
-    @api.multi
     def action_undo(self):
         self.ensure_one()
         if self.state == '02_admitted':
@@ -1200,10 +1157,10 @@ class CimComplaint(models.Model):
             len_of_data_to_encrypt = len(data_to_encrypt)
             rest = len_of_data_to_encrypt % block_size
             if rest > 0:
-                data_to_encrypt = data_to_encrypt + ' ' * (block_size - rest)
+                data_to_encrypt = data_to_encrypt + b' ' * (block_size - rest)
             # Encrypt
             iv = Random.new().read(AES.block_size)
-            cipher = AES.new(cipher_key, AES.MODE_CBC, iv)
+            cipher = AES.new(cipher_key.encode('utf-8'), AES.MODE_CBC, iv)
             encrypted_data = cipher.encrypt(data_to_encrypt)
             # Coding to base64
             resp = base64.b64encode(iv + encrypted_data)
@@ -1220,12 +1177,11 @@ class CimComplaint(models.Model):
             iv = encrypted_content[:block_size]
             encrypted_data = encrypted_content[block_size:]
             # Decrypt
-            cipher = AES.new(cipher_key, AES.MODE_CBC, iv)
+            cipher = AES.new(cipher_key.encode('utf-8'), AES.MODE_CBC, iv)
             raw_decrypted_data = cipher.decrypt(encrypted_data)
             resp = raw_decrypted_data.rstrip()
         return resp
 
-    @api.multi
     def action_complainant_data(self):
         self.ensure_one()
         if (self.is_delegated and self.state != '05_resolved' and
@@ -1240,14 +1196,12 @@ class CimComplaint(models.Model):
             }
             return act_window
 
-    @api.multi
     def action_extend(self):
         self.ensure_one()
-        if (self.state == '03_in_progress' and (not self.is_extended)):
+        if self.state == '03_in_progress' and (not self.is_extended):
             self.is_extended = True
             self._create_communication(extension=True)
 
-    @api.multi
     def _create_communication(self, extension=False):
         self.ensure_one()
         vals = {
@@ -1296,20 +1250,15 @@ class CimComplaint(models.Model):
             new_communication.send_mails()
 
     def _get_date_str(self, raw_date):
-        resp = raw_date
-        default_locale = locale.setlocale(locale.LC_TIME)
-        is_english = True
-        if (self.env.context and 'lang' in self.env.context):
-            is_english = self.env.context['lang'] == 'en_US'
-        try:
-            if is_english:
-                locale.setlocale(locale.LC_TIME, 'en_US.utf8')
-            resp = datetime.strptime(raw_date, '%Y-%m-%d').strftime('%x')
-        finally:
-            locale.setlocale(locale.LC_TIME, default_locale)
+        resp = str(raw_date)
+        lang = 'es_ES'
+        if 'lang' in self.env.context and self.env.context['lang']:
+            lang = self.env.context['lang']
+        lang_model = self.env['res.lang'].search([('code', '=', lang)])
+        if lang_model:
+            resp = raw_date.strftime(lang_model.date_format)
         return resp
 
-    @api.multi
     def create_initial_communication(self):
         for record in self:
             issue = _('New complaint:') + ' ' + record.name
@@ -1417,13 +1366,13 @@ class CimComplaintCommunication(models.Model):
         size=CimComplaint.SIZE_MEDIUM_EXTRA,
         required=True,
         index=True,
-        track_visibility='onchange',)
+        tracking=True,)
 
     description = fields.Text(
         string='Communication Data',
         required=True,
         index=True,
-        track_visibility='onchange',)
+        tracking=True,)
 
     from_complainant = fields.Boolean(
         string='Communication from the complainant',
@@ -1472,7 +1421,7 @@ class CimComplaintCommunication(models.Model):
         default='02_validated',
         required=True,
         index=True,
-        track_visibility='onchange',)
+        tracking=True,)
 
     communication_date = fields.Date(
         string='Communication Date',
@@ -1566,7 +1515,6 @@ class CimComplaintCommunication(models.Model):
                         self.SIZE_COMMUNICATION_NUMBER)
             record.name = name
 
-    @api.multi
     def _compute_from_complainant_as_text(self):
         for record in self:
             from_complainant_as_text = _('Complainant')
@@ -1574,7 +1522,6 @@ class CimComplaintCommunication(models.Model):
                 from_complainant_as_text = _('Investigating User')
             record.from_complainant_as_text = from_complainant_as_text
 
-    @api.multi
     def _compute_user_in_group_cim_settings(self):
         user_in_group_cim_settings = \
             self.env.user.has_group(
@@ -1582,7 +1529,6 @@ class CimComplaintCommunication(models.Model):
         for record in self:
             record.user_in_group_cim_settings = user_in_group_cim_settings
 
-    @api.multi
     def _compute_with_email(self):
         for record in self:
             with_email = False
@@ -1590,17 +1536,17 @@ class CimComplaintCommunication(models.Model):
                 with_email = True
             record.with_email = with_email
 
-    @api.multi
     def _compute_automatic_email_validate_com(self):
-        automatic_email_validate_com = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'automatic_email_validate_com')
+        config = self.env['ir.config_parameter'].sudo()
+        automatic_email_validate_com = config.get_param(
+            'cim_complaints_channel.automatic_email_validate_com', False)
         for record in self:
             record.automatic_email_validate_com = automatic_email_validate_com
 
-    @api.multi
     def _compute_automatic_email_complainant_com(self):
-        automatic_email_complainant_com = self.env['ir.values'].get_default(
-            'res.cim.config.settings', 'automatic_email_complainant_com')
+        config = self.env['ir.config_parameter'].sudo()
+        automatic_email_complainant_com = config.get_param(
+            'cim_complaints_channel.automatic_email_complainant_com', False)
         for record in self:
             record.automatic_email_complainant_com = \
                 automatic_email_complainant_com
@@ -1613,7 +1559,6 @@ class CimComplaintCommunication(models.Model):
                 communication_date = fields.Datetime.now()
             record.communication_date = communication_date
 
-    @api.multi
     def _compute_number_of_attachments(self):
         for record in self:
             number_of_attachments = CimComplaint.MAX_DOCUMENTS
@@ -1633,7 +1578,6 @@ class CimComplaintCommunication(models.Model):
                                             number_of_attachments - 1
             record.number_of_attachments = number_of_attachments
 
-    @api.multi
     def _compute_icon_inputoutput(self):
         image_path_input = \
             modules.module.get_resource_path('cim_complaints_channel',
@@ -1653,7 +1597,6 @@ class CimComplaintCommunication(models.Model):
                 icon_inputoutput = base64.b64encode(image_file.read())
             record.icon_inputoutput = icon_inputoutput
 
-    @api.multi
     def _compute_description_as_html(self):
         for record in self:
             description_as_html = ''
@@ -1671,7 +1614,6 @@ class CimComplaintCommunication(models.Model):
                     _('It is mandatory to enter the complaint of the '
                       'communication.'))
 
-    @api.multi
     def name_get(self):
         result = []
         # communication_show_complete_code
@@ -1691,22 +1633,23 @@ class CimComplaintCommunication(models.Model):
             result.append((record.id, display_name))
         return result
 
-    @api.model
-    def create(self, vals):
-        vals = self._test_tracking_code(vals)
-        vals = self._process_vals(vals, is_create=True)
-        new_communication = super(CimComplaintCommunication, self).create(vals)
-        if new_communication.from_complainant:
-            if new_communication.automatic_email_complainant_com:
-                new_communication.send_mails()
-            if new_communication.complaint_id.param_email_for_notice:
-                self._send_notice(new_communication)
-        return new_communication
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            vals = self._test_tracking_code(vals)
+            vals = self._process_vals(vals, is_create=True)
+        new_communications = super().create(vals_list)
+        for new_communication in new_communications:
+            if new_communication.from_complainant:
+                if new_communication.automatic_email_complainant_com:
+                    new_communication.send_mails()
+                if new_communication.complaint_id.param_email_for_notice:
+                    self._send_notice(new_communication)
+        return new_communications
 
-    @api.multi
     def write(self, vals):
         vals = self._process_vals(vals)
-        super(CimComplaintCommunication, self).write(vals)
+        super().write(vals)
         return True
 
     @api.model
@@ -1724,7 +1667,7 @@ class CimComplaintCommunication(models.Model):
                             complaint.tracking_code,
                             model_cim_complaint._cipher_key)
                     if (vals['decrypted_tracking_code'] ==
-                       decrypted_tracking_code_of_complaint):
+                            decrypted_tracking_code_of_complaint.decode()):
                         vals['complaint_id'] = complaint.id
                         vals['decrypted_tracking_code'] = \
                             self.EMPTY_TRACKING_CODE
@@ -1892,53 +1835,54 @@ class CimComplaintCommunication(models.Model):
             if record.state != '01_draft':
                 raise exceptions.UserError(_(
                     'It is not possile to delete a validated communication.'))
-            if (record.complaint_id.state == '04_ready' or
-               record.complaint_id.state == '05_resolved'):
+            if record.complaint_id.state in ('04_ready', '05_resolved'):
                 raise exceptions.UserError(_(
                     'The complaint has completed its investigation phase, '
                     'so it is no longer possible to delete communications.'))
-        return super(CimComplaintCommunication, self).unlink()
+        return super().unlink()
 
-    # NOTE: if api.multi, problem with send_mail
-    @api.model
-    def action_go_to_state_02_validated(self, communication_id):
-        if communication_id:
-            communication = self.browse(communication_id)
-            if communication and communication.state == '01_draft':
-                communication.state = '02_validated'
-                if communication.automatic_email_validate_com:
-                    communication.send_mails()
+    def action_go_to_state_02_validated(self):
+        self.ensure_one()
+        communication = self
+        if communication.state == '01_draft':
+            communication.state = '02_validated'
+            if communication.automatic_email_validate_com:
+                communication.send_mails()
 
-    @api.multi
     def action_undo(self):
         self.ensure_one()
         if self.state == '02_validated':
             self.state = '01_draft'
 
-    @api.model
-    def action_send_mail(self, communication_id):
-        if communication_id:
-            communication = self.browse(communication_id)
-            if (communication and communication.state == '02_validated' and
-               communication.with_email):
-                communication.send_mails()
+    def action_send_mail(self):
+        self.ensure_one()
+        communication = self
+        if (communication and communication.state == '02_validated' and
+           communication.with_email):
+            communication.send_mails()
 
-    @api.multi
     def send_mails(self):
         for record in self:
-            complainant_email = record.complaint_id.decrypted_complainant_email
-            if record.state == '02_validated' and complainant_email:
+            decrypted_complainant_email = ''
+            if record.complaint_id.complainant_email:
+                decrypted_complainant_email = record.complaint_id.decrypt_data(
+                    record.complaint_id.complainant_email,
+                    record.complaint_id._cipher_key).decode('utf-8')
+            decrypted_complainant_email
+            if record.state == '02_validated' and decrypted_complainant_email:
                 text_for_log_ok = _('Email sent. Destination:')
                 text_for_log_fail = _('ERROR, the email could not be sent. '
                                       'Destination:')
                 mail_ok = self._send_communication(record)
                 if mail_ok:
                     record.is_sent = True
-                    record.message_post(text_for_log_ok + ' ' +
-                                        complainant_email)
+                    message_ok = (text_for_log_ok + ' ' +
+                                  decrypted_complainant_email)
+                    record.message_post(body=message_ok)
                 else:
-                    record.message_post(text_for_log_fail + ' ' +
-                                        complainant_email)
+                    message_fail = (text_for_log_fail + ' ' +
+                                    decrypted_complainant_email)
+                    record.message_post(body=message_fail)
 
     @api.model
     def _send_communication(self, communication):
@@ -1993,5 +1937,5 @@ class CimComplaintCommunication(models.Model):
         html = ''
         if text:
             html = text.replace('\n', '<br/>')
-            html = '<span>' + html + '</span>'
+            # html = '<span>' + html + '</span>'
         return html

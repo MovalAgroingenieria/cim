@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2023 Moval Agroingeniería
+# Copyright 2025 Moval Agroingeniería
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
 from odoo import models, fields, api, exceptions, _
@@ -42,7 +42,6 @@ class CimComplaintType(models.Model):
     active = fields.Boolean(
         default=True,)
 
-    @api.multi
     def _compute_number_of_complaints(self):
         for record in self:
             number_of_complaints = 0
@@ -50,7 +49,6 @@ class CimComplaintType(models.Model):
                 number_of_complaints = len(record.complaint_ids)
             record.number_of_complaints = number_of_complaints
 
-    @api.multi
     def _compute_notes_text(self):
         model_converter = self.env['ir.fields.converter']
         for record in self:
@@ -60,7 +58,6 @@ class CimComplaintType(models.Model):
                     record.notes, 50, 150)
             record.notes_text = notes_text
 
-    @api.multi
     def unlink(self):
         for record in self:
             if record.is_standard:
@@ -69,7 +66,6 @@ class CimComplaintType(models.Model):
         res = super(CimComplaintType, self).unlink()
         return res
 
-    @api.multi
     def action_show_complaints(self):
         self.ensure_one()
         current_complaint_type = self

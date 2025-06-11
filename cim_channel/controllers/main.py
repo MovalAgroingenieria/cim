@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-# Copyright 2024 Moval Agroingeniería
+# Copyright 2025 Moval Agroingeniería
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
 import json
 import base64
-from cStringIO import StringIO
+from io import StringIO
 from odoo import http, _
 from odoo.http import request
-from odoo.addons.website_form.controllers.main import WebsiteForm
+from odoo.addons.website.controllers.form import WebsiteForm
+from io import BytesIO
 
 
 class WebsiteFormCim(WebsiteForm):
@@ -45,7 +46,7 @@ class WebsiteFormCim(WebsiteForm):
     def insert_record(self, request, model, values, custom, meta=None):
         if model.model == 'cim.complaint':
             values['complaint_lang'] = request.httprequest.cookies.get(
-                'website_lang')
+                'frontend_lang')
         return super(WebsiteFormCim, self).insert_record(
             request, model, values, custom, meta)
 
@@ -78,7 +79,7 @@ class WebsiteFormCim(WebsiteForm):
                 decrypted_tracking_code_of_complaint = \
                     model_cim_complaint.decrypt_data(
                         complaint.tracking_code,
-                        model_cim_complaint._cipher_key)
+                        model_cim_complaint._cipher_key).decode('utf-8')
                 if (entered_tracking_code ==
                    decrypted_tracking_code_of_complaint):
                     entered_complaint = complaint
@@ -111,7 +112,7 @@ class WebsiteFormCim(WebsiteForm):
         communication = None
         model_cim_complaint_communication = \
             request.env['cim.complaint.communication'].sudo()
-        if ('m' in kwargs and kwargs['m']):
+        if 'm' in kwargs and kwargs['m']:
             complaint = self._get_complaint_from_encrypted_tracking_code(
                 kwargs['m'])
             if complaint and communication_id:
@@ -159,15 +160,14 @@ class WebsiteFormCim(WebsiteForm):
 
     @http.route('/communications/download/<int:communication_id>/<int:n_doc>',
                 type='http', auth='public', website=True)
-    def download_document(self, communication_id=None, n_doc=None,
-                          **kwargs):
+    def download_document(self, communication_id=None, n_doc=None, **kwargs):
         complaint = None
         communication = None
         model_cim_complaint = \
             request.env['cim.complaint'].sudo()
         model_cim_complaint_communication = \
             request.env['cim.complaint.communication'].sudo()
-        if ('m' in kwargs and kwargs['m']):
+        if 'm' in kwargs and kwargs['m']:
             complaint = self._get_complaint_from_encrypted_tracking_code(
                 kwargs['m'])
             if communication_id:
@@ -178,45 +178,51 @@ class WebsiteFormCim(WebsiteForm):
            n_doc >= 0 and n_doc <= model_cim_complaint.MAX_DOCUMENTS):
             file_content = None
             if n_doc == 1:
-                file_content = StringIO(base64.standard_b64decode(
-                    communication.document_01))
+                decoded_bytes_doc1 = base64.standard_b64decode(
+                    communication.document_01)
+                doc_1 = BytesIO(decoded_bytes_doc1)
                 return http.send_file(
-                    file_content,
+                    doc_1,
                     filename=communication.document_01_name,
                     as_attachment=True)
             if n_doc == 2:
-                file_content = StringIO(base64.standard_b64decode(
-                    communication.document_02))
+                decoded_bytes_doc2 = base64.standard_b64decode(
+                    communication.document_02)
+                doc_2 = BytesIO(decoded_bytes_doc2)
                 return http.send_file(
-                    file_content,
+                    doc_2,
                     filename=communication.document_02_name,
                     as_attachment=True)
             if n_doc == 3:
-                file_content = StringIO(base64.standard_b64decode(
-                    communication.document_03))
+                decoded_bytes_doc3 = base64.standard_b64decode(
+                    communication.document_03)
+                doc_3 = BytesIO(decoded_bytes_doc3)
                 return http.send_file(
-                    file_content,
+                    doc_3,
                     filename=communication.document_03_name,
                     as_attachment=True)
             if n_doc == 4:
-                file_content = StringIO(base64.standard_b64decode(
-                    communication.document_04))
+                decoded_bytes_doc4 = base64.standard_b64decode(
+                    communication.document_04)
+                doc_4 = BytesIO(decoded_bytes_doc4)
                 return http.send_file(
-                    file_content,
+                    doc_4,
                     filename=communication.document_04_name,
                     as_attachment=True)
             if n_doc == 5:
-                file_content = StringIO(base64.standard_b64decode(
-                    communication.document_05))
+                decoded_bytes_doc5 = base64.standard_b64decode(
+                    communication.document_05)
+                doc_5 = BytesIO(decoded_bytes_doc5)
                 return http.send_file(
-                    file_content,
+                    doc_5,
                     filename=communication.document_05_name,
                     as_attachment=True)
             if n_doc == 6:
-                file_content = StringIO(base64.standard_b64decode(
-                    communication.document_06))
+                decoded_bytes_doc6 = base64.standard_b64decode(
+                    communication.document_06)
+                doc_6 = BytesIO(decoded_bytes_doc6)
                 return http.send_file(
-                    file_content,
+                    doc_6,
                     filename=communication.document_06_name,
                     as_attachment=True)
         else:
