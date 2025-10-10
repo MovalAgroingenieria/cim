@@ -1,0 +1,12 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_cim_type_restricted,access.cim.type.restricted,cim_channel.model_cim_type,cim_channel.group_cim_restricted,1,0,0,0
+access_cim_type_manager,access.cim.type.manager,cim_channel.model_cim_type,cim_channel.group_cim_manager,1,1,1,1
+access_cim_link_type_restricted,access.cim.link.type.restricted,cim_channel.model_cim_link_type,cim_channel.group_cim_restricted,1,0,0,0
+access_cim_link_type_manager,access.cim.link.type.manager,cim_channel.model_cim_link_type,cim_channel.group_cim_manager,1,1,1,1
+access_cim_restricted,access.cim.restricted,cim_channel.model_cim,cim_channel.group_cim_restricted,1,0,0,0
+access_cim_manager,access.cim.manager,cim_channel.model_cim,cim_channel.group_cim_manager,1,1,1,1
+access_cim_communication_restricted,access.cim.communication.restricted,cim_channel.model_cim_communication,cim_channel.group_cim_restricted,1,0,0,0
+access_cim_communication_manager,access.cim.communication.manager,cim_channel.model_cim_communication,cim_channel.group_cim_manager,1,1,1,1
+access_wizard_reject_manager,access.wizard.reject.manager,cim_channel.model_wizard_reject,cim_channel.group_cim_manager,1,1,1,1
+access_wizard_resolve_manager,access.wizard.resolve.manager,cim_channel.model_wizard_resolve,cim_channel.group_cim_manager,1,1,1,1
+access_wizard_data_manager,access.wizard.data.manager,cim_channel.model_wizard_data,cim_channel.group_cim_manager,1,1,1,1
